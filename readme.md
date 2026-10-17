@@ -1,13 +1,41 @@
-# Como usar
+# nerdb-tools
 
-- 1. Suba o llama-server com um modelo instruct 7–8B, por exemplo llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080.
-- 2. Crie uma chave de API na página de configurações, com um usuário admin.
-- 3. Rode node translate-cast.js collect e abra o cast-review.json. Marque "skip": true no que estiver errado.
-- 4. Rode apply --dry-run para conferir e depois apply para gravar.
+Tradução dos papéis genéricos do elenco (`movie_cast`) do NERDB para português, usando um llama-server local.
 
-# Pontos de atenção
+## Como usar
 
-- Deduplicação: a IA traduz cada texto único uma vez, não uma vez por linha. Isso corta o custo, mas o título do filme não entra no contexto. Para um papel como “Doctor” isso não importa. Se você notar traduções erradas, mande o title_br junto no prompt só para os textos ambíguos.
-- Gênero: o prompt manda manter o original quando o gênero é ambíguo. Confira no arquivo de revisão o que a IA marcou como llm, que é onde estão os erros mais prováveis.
-- Conflitos (409): acontecem quando o ator já tem o personagem traduzido no mesmo filme. O script só marca a linha. Decida depois se apaga a duplicata pelo editor de elenco.
-- Rascunho: o response_format com json_schema funciona em versões recentes do llama-server. Se a sua recusar, troque por { type: 'json_object', schema: SCHEMA }.
+1. Copie `.env.example` para `.env` e preencha `NERDB_API_KEY` (chave criada na página de configurações, com usuário admin).
+2. Suba o llama-server com um modelo instruct 7–8B: `llama-server -m qwen2.5-7b-instruct-q4_k_m.gguf --port 8080`.
+3. `npm run collect` gera, em `data/`:
+   - `translations.json`: uma entrada por texto único, ordenada por frequência. Marque `"skip": true` no que estiver errado.
+   - `contextual.json`: linhas ambíguas (gênero/contexto) que a IA decidiu com filme, ano e nome do ator. Marque `"skip": true` por linha.
+4. `npm run apply:dry` para conferir (aceita `-- --limit=50`) e `npm run apply` para gravar.
+
+## Estrutura
+
+```
+src/
+  cli.js              entrada: collect | apply
+  config.js           variáveis de ambiente
+  nerdb.js            cliente da API (retry em 429, paginação, PATCH)
+  llm.js              cliente do llama-server (fallback json_schema -> json_object)
+  prompts.js          prompts e schemas
+  dict.js             papéis inequívocos, sem IA
+  tail.js             padronização de (voice), (uncredited) etc.
+  normalize.js        split base/sufixo e filtro de candidatos
+  transform.js        regra única que decide o novo valor de uma linha
+  storage.js          leitura/gravação atômica dos JSONs em data/
+  util.js             sleep e limitador de concorrência
+  commands/
+    collect.js        varre, traduz e gera os arquivos de revisão
+    apply.js          varre de novo e grava os PATCHs
+```
+
+## Como funciona
+
+- **Texto único primeiro:** `collect` conta os textos e só envia à IA os que aparecem ao menos `MIN_COUNT` vezes, dos mais frequentes para os menos. Nomes próprios, que quase nunca se repetem, ficam de fora.
+- **Ambíguos com contexto:** a IA marca `ambiguous` quando a tradução depende de gênero ou filme (Nurse, Student...). Esses textos são refeitos linha a linha com título, ano e nome do ator, e a IA decide.
+- **Sufixos:** `(voice)`, `(uncredited)` etc. viram `(voz)`, `(sem créditos)` em qualquer linha, mesmo que o nome não mude. Para incluir termos novos, edite `src/tail.js`. Use `--no-tail` para pular.
+- **Idempotente:** `apply` não depende de flags `done`. Rodar de novo só pega o que ainda não foi alterado.
+- **Conflitos (409):** vão para `data/conflicts.json`. Decida depois se apaga a duplicata pelo editor de elenco.
+- **Retomável:** `data/llm-cache.json` guarda as respostas da IA. Pode interromper e rodar `collect` de novo. Reexecutar preserva os `skip` já marcados.
