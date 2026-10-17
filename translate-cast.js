@@ -1,14 +1,12 @@
-#!/usr/bin/env node
 // Uso:
-//   NERDB_KEY=sk_... node translate-cast.mjs collect          -> gera cast-review.json
-//   NERDB_KEY=sk_... node translate-cast.mjs apply [--dry-run] -> aplica o que não tem "skip": true
+// node translate-cast.js collect           -> gera cast-review.json
+// node translate-cast.js apply [--dry-run] -> aplica o que não tem "skip": true
+import "dotenv/config";
 import { readFile, writeFile } from 'node:fs/promises';
 
-const {
-    NERDB_URL = 'https://nerdb.com.br',
-    NERDB_KEY,
-    LLAMA_URL = 'http://127.0.0.1:8080',
-} = process.env;
+const NERDB_API_KEY = process.env.NERDB_API_KEY;
+const NERDB_URL = process.env.NERDB_URL || 'https://nerdb.com.br';
+const LLAMA_URL = process.env.LLAMA_URL || 'http://127.0.0.1:8080';
 
 const REVIEW_FILE = 'cast-review.json';
 const CACHE_FILE  = 'llm-cache.json';
@@ -16,7 +14,7 @@ const BATCH       = 20;
 
 const [command, ...flags] = process.argv.slice(2);
 
-if (!NERDB_KEY) { console.error('Defina NERDB_KEY.'); process.exit(1); }
+if (!NERDB_API_KEY) { console.error('Defina NERDB_API_KEY.'); process.exit(1); }
 
 // Papéis inequívocos: resolvidos sem IA. Chave em minúsculas.
 const DICT = {
@@ -38,7 +36,7 @@ async function nerdb(path, options = {}, retry = true)
 {
     const res = await fetch(`${NERDB_URL}${path}`, {
         ...options,
-        headers: { Authorization: `Bearer ${NERDB_KEY}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${NERDB_API_KEY}`, 'Content-Type': 'application/json' },
     });
 
     if (res.status === 429 && retry)
@@ -245,4 +243,4 @@ async function apply()
 
 if (command === 'collect') await collect();
 else if (command === 'apply') await apply();
-else console.log('Uso: node translate-cast.mjs collect | apply [--dry-run]');
+else console.log('Uso: node translate-cast.js collect | apply [--dry-run]');
