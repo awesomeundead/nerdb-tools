@@ -4,7 +4,7 @@ import { DICT } from '../dict.js';
 import { split, isCandidate } from '../normalize.js';
 import { translateTail } from '../tail.js';
 import { translateTexts, translateContextual } from '../llm.js';
-import { readJson, writeJson, FILES } from '../storage.js';
+import { readJson, writeJson, readState, updateState, FILES } from '../storage.js';
 
 const clean = (pt, original) =>
 {
@@ -12,29 +12,42 @@ const clean = (pt, original) =>
     return v === '' || v.toLowerCase() === original.toLowerCase() ? null : v;
 };
 
-export async function collect({ rows = Infinity } = {})
+export async function collect({ rows = Infinity, from = null, to = Infinity, full = false } = {})
 {
+    const state = await readState();
+    const start = from ?? (full ? 0 : state.collected_id);
+
     const cache = await readJson(FILES.cache, {});
     cache.texts ??= {};   // chave minúscula -> { pt|null, ambiguous }
     cache.rows  ??= {};   // row id -> pt|null (casos ambíguos, traduzidos com contexto)
 
+    // Contagens acumuladas entre execuções. countedId evita contar a mesma linha duas vezes
+    // (retomada após falha, --from sobreposto). --full zera e recontabiliza tudo.
+    if (full) { cache.counts = {}; cache.countedId = 0; }
+    cache.counts    ??= {};   // chave minúscula -> { text, count }
+    cache.countedId ??= 0;
+
     const prevTranslations = await readJson(FILES.translations, {});
     const prevContextual   = await readJson(FILES.contextual, []);
-    const skippedRows      = new Set(prevContextual.filter(i => i.skip).map(i => i.row_id));
 
-    // 1. Varre a API: conta textos únicos e guarda o contexto de cada candidato.
-    const counts  = new Map();   // key -> { text, count }
+    // 1. Varre só o intervalo pedido (por padrão, o que é novo desde o último collect).
     const records = [];
+    let lastId = start;
 
-    for await (const row of allRows(rows))
+    for await (const row of allRows({ from: start, to, max: rows }))
     {
+        lastId = Math.max(lastId, row.id);
+
         const { base, tail } = split(row.movie_character);
         if (!isCandidate(base)) continue;
 
         const key = base.toLowerCase();
-        const entry = counts.get(key) ?? { text: base, count: 0 };
-        entry.count++;
-        counts.set(key, entry);
+
+        if (row.id > cache.countedId)
+        {
+            const entry = cache.counts[key] ??= { text: base, count: 0 };
+            entry.count++;
+        }
 
         records.push({
             id: row.id, key, tail, before: row.movie_character,
@@ -42,13 +55,19 @@ export async function collect({ rows = Infinity } = {})
         });
     }
 
+    cache.countedId = Math.max(cache.countedId, lastId);
+    await writeJson(FILES.cache, cache);
+
+    console.log(`Lidas ${records.length} linhas candidatas (ids ${start + 1} a ${lastId}).`);
+
     // 2. IA por texto único, dos mais frequentes para os menos (nomes próprios ficam de fora).
-    const pending = [...counts]
+    //    Textos que já passaram pela IA (cache.texts) nunca voltam a ser enviados.
+    const pending = Object.entries(cache.counts)
         .filter(([key, e]) => !(key in DICT) && !(key in cache.texts) && e.count >= config.minCount)
         .sort((a, b) => b[1].count - a[1].count)
         .map(([key, e]) => ({ key, text: e.text }));
 
-    console.log(`${counts.size} textos únicos, ${pending.length} vão para a IA (mínimo ${config.minCount} ocorrências).`);
+    console.log(`${Object.keys(cache.counts).length} textos únicos no total, ${pending.length} novos vão para a IA (mínimo ${config.minCount} ocorrências).`);
 
     for (let i = 0; i < pending.length; i += config.batch)
     {
@@ -74,30 +93,33 @@ export async function collect({ rows = Infinity } = {})
         await writeJson(FILES.cache, cache);
     }
 
-    // 3. translations.json: uma entrada por texto único, ordenada por frequência.
+    // 3. translations.json: merge. Entradas existentes mantêm pt e skip (inclusive edições manuais);
+    //    só o contador é atualizado. O dicionário sempre vence. Ordenado por frequência.
     const translations = {};
 
-    for (const [key, e] of [...counts].sort((a, b) => b[1].count - a[1].count))
+    for (const [key, e] of Object.entries(cache.counts).sort((a, b) => b[1].count - a[1].count))
     {
         const inDict = key in DICT;
+        const prev   = prevTranslations[key];
         const c      = cache.texts[key];
-        const pt     = inDict ? DICT[key] : (c && !c.ambiguous ? c.pt : null);
+        const pt     = inDict ? DICT[key] : (prev?.pt ?? (c && !c.ambiguous ? c.pt : null));
 
         if (!pt) continue;
 
         translations[key] = {
-            count: e.count, pt, source: inDict ? 'dict' : 'llm',
-            skip: prevTranslations[key]?.skip ?? false,
+            count: e.count, pt,
+            source: inDict ? 'dict' : (prev?.source ?? 'llm'),
+            skip: prev?.skip ?? false,
         };
     }
 
     await writeJson(FILES.translations, translations);
 
-    // 4. Ambíguos (gênero/contexto): a IA decide linha a linha, com filme, ano e nome do ator.
+    // 4. Ambíguos (gênero/contexto) das linhas novas: a IA decide linha a linha.
     const ambiguous = records.filter(r => !(r.key in DICT) && cache.texts[r.key]?.ambiguous);
     const todo      = ambiguous.filter(r => !(r.id in cache.rows));
 
-    console.log(`${ambiguous.length} linhas ambíguas, ${todo.length} a traduzir com contexto.`);
+    console.log(`${ambiguous.length} linhas ambíguas no intervalo, ${todo.length} a traduzir com contexto.`);
 
     for (let i = 0; i < todo.length; i += config.batch)
     {
@@ -106,13 +128,13 @@ export async function collect({ rows = Infinity } = {})
         try
         {
             const input = batch.map(r => ({
-                id: r.id, character: counts.get(r.key).text, movie: r.title, year: r.year, person: r.person,
+                id: r.id, character: cache.counts[r.key].text, movie: r.title, year: r.year, person: r.person,
             }));
 
             for (const r of await translateContextual(input))
             {
                 const rec = batch.find(b => b.id === Number(r.id));
-                if (rec) cache.rows[rec.id] = clean(r.pt, counts.get(rec.key).text);
+                if (rec) cache.rows[rec.id] = clean(r.pt, cache.counts[rec.key].text);
             }
         }
         catch (error) { console.error(`Lote contextual ${i / config.batch + 1} falhou: ${error.message}`); }
@@ -120,20 +142,31 @@ export async function collect({ rows = Infinity } = {})
         await writeJson(FILES.cache, cache);
     }
 
-    const contextual = ambiguous
-        .filter(r => cache.rows[r.id])
-        .map(r => ({
+    // contextual.json: merge por row_id. Linhas já existentes ficam intactas (pt editado, skip).
+    const byRow = new Map(prevContextual.map(i => [i.row_id, i]));
+
+    for (const r of ambiguous)
+    {
+        if (!cache.rows[r.id] || byRow.has(r.id)) continue;
+
+        byRow.set(r.id, {
             row_id: r.id,
             movie:  `${r.title} (${r.year})`,
             person: r.person,
             before: r.before,
             pt:     cache.rows[r.id],
             after:  cache.rows[r.id] + translateTail(r.tail),
-            skip:   skippedRows.has(r.id),
-        }));
+            skip:   false,
+        });
+    }
 
+    const contextual = [...byRow.values()].sort((a, b) => a.row_id - b.row_id);
     await writeJson(FILES.contextual, contextual);
 
+    // Só avança o checkpoint no fim: se algo cair antes, a próxima execução relê o intervalo
+    // (sem recontar, graças ao countedId, e sem reenviar à IA, graças ao cache).
+    await updateState({ collected_id: Math.max(state.collected_id, lastId) });
+
     console.log(`${Object.keys(translations).length} traduções em ${FILES.translations}, ${contextual.length} linhas em ${FILES.contextual}.`);
-    console.log('Revise os dois arquivos em data/ e marque "skip": true no que estiver errado.');
+    console.log('Revise o que for novo em data/ e marque "skip": true no que estiver errado.');
 }

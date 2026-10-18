@@ -24,10 +24,12 @@ export async function nerdb(path, options = {}, retries = 3)
     return data;
 }
 
-// max: para de ler depois de N linhas (útil para testes pequenos)
-export async function* allRows(max = Infinity)
+// from: começa depois deste id (checkpoint)
+// to:   para ao passar deste id
+// max:  para depois de N linhas (útil para testes pequenos)
+export async function* allRows({ from = 0, to = Infinity, max = Infinity } = {})
 {
-    let after = 0, seen = 0;
+    let after = from, seen = 0;
 
     while (true)
     {
@@ -35,7 +37,7 @@ export async function* allRows(max = Infinity)
 
         for (const item of page.items)
         {
-            if (seen++ >= max) return;
+            if (item.id > to || seen++ >= max) return;
             yield item;
         }
 
