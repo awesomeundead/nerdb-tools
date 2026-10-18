@@ -24,14 +24,20 @@ export async function nerdb(path, options = {}, retries = 3)
     return data;
 }
 
-export async function* allRows()
+// max: para de ler depois de N linhas (útil para testes pequenos)
+export async function* allRows(max = Infinity)
 {
-    let after = 0;
+    let after = 0, seen = 0;
 
     while (true)
     {
         const page = await nerdb(`/api/admin/movie-cast?after=${after}&limit=100`);
-        yield* page.items;
+
+        for (const item of page.items)
+        {
+            if (seen++ >= max) return;
+            yield item;
+        }
 
         if (page.next_after === null) return;
         after = page.next_after;

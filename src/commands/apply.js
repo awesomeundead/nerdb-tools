@@ -4,7 +4,7 @@ import { buildTransform } from '../transform.js';
 import { limiter } from '../util.js';
 import { readJson, writeJson, FILES } from '../storage.js';
 
-export async function apply({ dryRun = false, tail = true, limit = Infinity } = {})
+export async function apply({ dryRun = false, tail = true, rows = Infinity, limit = Infinity } = {})
 {
     const translations = await readJson(FILES.translations, null);
     const contextual   = await readJson(FILES.contextual, []);
@@ -19,7 +19,7 @@ export async function apply({ dryRun = false, tail = true, limit = Infinity } = 
     let stop = false;
 
     // Varre a API de novo: dados sempre atuais e idempotente (o que já foi traduzido não casa mais).
-    for await (const row of allRows())
+    for await (const row of allRows(rows))
     {
         if (stop || stats.planned >= limit) break;
 

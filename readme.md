@@ -1,6 +1,6 @@
 # nerdb-tools
 
-Tradução dos papéis genéricos do elenco (`movie_cast`) do NERDB para português, usando um llama-server local.
+Tradução dos papéis genéricos do elenco (`movie_character`) do NERDB para português, usando um llama-server local.
 
 ## Como usar
 
@@ -9,7 +9,25 @@ Tradução dos papéis genéricos do elenco (`movie_cast`) do NERDB para portugu
 3. `npm run collect` gera, em `data/`:
    - `translations.json`: uma entrada por texto único, ordenada por frequência. Marque `"skip": true` no que estiver errado.
    - `contextual.json`: linhas ambíguas (gênero/contexto) que a IA decidiu com filme, ano e nome do ator. Marque `"skip": true` por linha.
-4. `npm run apply:dry` para conferir (aceita `-- --limit=50`) e `npm run apply` para gravar.
+4. `npm run apply:dry` para conferir e `npm run apply` para gravar.
+
+### Teste pequeno (ex.: 500 registros)
+
+Use a mesma `--rows` no `collect` e no `apply`, e um `DATA_DIR` separado para não misturar com a execução real:
+
+```
+DATA_DIR=data-test MIN_COUNT=1 npm run collect -- --rows=500
+DATA_DIR=data-test npm run apply:dry -- --rows=500
+DATA_DIR=data-test npm run apply -- --rows=500
+```
+
+```powershell
+$env:DATA_DIR="data-test"; $env:MIN_COUNT="1"; npm run collect -- --rows=500
+```
+
+- `--rows=N` lê só as N primeiras linhas da API (sempre as mesmas, em ordem de id).
+- `--limit=N` (só no `apply`) grava no máximo N alterações.
+- `MIN_COUNT=1` no teste, porque em 500 linhas poucos textos se repetem 3 vezes.
 
 ## Estrutura
 

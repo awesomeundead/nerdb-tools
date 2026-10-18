@@ -12,7 +12,7 @@ const clean = (pt, original) =>
     return v === '' || v.toLowerCase() === original.toLowerCase() ? null : v;
 };
 
-export async function collect()
+export async function collect({ rows = Infinity } = {})
 {
     const cache = await readJson(FILES.cache, {});
     cache.texts ??= {};   // chave minúscula -> { pt|null, ambiguous }
@@ -26,7 +26,7 @@ export async function collect()
     const counts  = new Map();   // key -> { text, count }
     const records = [];
 
-    for await (const row of allRows())
+    for await (const row of allRows(rows))
     {
         const { base, tail } = split(row.movie_character);
         if (!isCandidate(base)) continue;
