@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sinopses · nerdb-tools</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+        textarea { width: 100%; box-sizing: border-box; font: inherit; }
+        #json { height: 8rem; font-family: ui-monospace, monospace; font-size: .85rem; }
+        .bar { display: flex; gap: .5rem; margin: .75rem 0; flex-wrap: wrap; align-items: center; }
+        button { padding: .4rem .9rem; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #8884; vertical-align: top; }
+        td.syn { width: 50%; }
+        td.syn textarea { height: 5rem; }
+        .ok { color: #2a9d4b; } .err { color: #d33; }
+        #summary { margin-left: auto; opacity: .7; }
+    </style>
+</head>
+<body>
+    <p><a href="/">← ferramentas</a></p>
+    <h1>Sinopses de filmes</h1>
+
+    <textarea id="json" placeholder='{"items":[{"id":2,"title_br":"Amnésia","release_year":"2000"}]}'></textarea>
+
+    <div class="bar">
+        <button id="load">Carregar JSON</button>
+        <button id="gen" disabled>Gerar todas</button>
+        <button id="save" disabled>Gravar todas</button>
+        <button id="stop" disabled>Parar</button>
+        <span id="summary"></span>
+    </div>
+
+    <table id="table" hidden>
+        <thead><tr><th>ID</th><th>Filme</th><th>Sinopse (editável)</th><th>Status</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+    </table>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let rows = [];
+let stopRequested = false;
+
+async function api(method, url, body)
+{
+    const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || res.statusText);
+    return data;
+}
+
+function setStatus(r, text, cls = '')
+{
+    r.status.textContent = text;
+    r.status.className = cls;
+    summary();
+}
+
+function summary()
+{
+    const done  = rows.filter(r => r.saved).length;
+    const ready = rows.filter(r => r.ta.value.trim() && !r.saved).length;
+    $('summary').textContent = `${rows.length} filmes · ${ready} prontos para gravar · ${done} gravados`;
+}
+
+function load()
+{
+    let items;
+
+    try { items = JSON.parse($('json').value).items; }
+    catch { return alert('JSON inválido.'); }
+
+    if (!Array.isArray(items) || !items.length) return alert('O JSON precisa de "items" com ao menos um filme.');
+
+    $('rows').replaceChildren();
+    rows = items.map(item =>
+    {
+        const tr = document.createElement('tr');
+        const cell = () => tr.appendChild(document.createElement('td'));
+
+        cell().textContent = item.id;
+        cell().textContent = `${item.title_br} (${item.release_year})`;
+
+        const ta = document.createElement('textarea');
+        const synCell = cell();
+        synCell.className = 'syn';
+        synCell.appendChild(ta);
+
+        const status = cell();
+        const actions = cell();
+
+        const r = { item, ta, status, saved: false };
+        ta.addEventListener('input', summary);
+
+        for (const [label, fn] of [['Gerar', generateRow], ['Gravar', saveRow]])
+        {
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.addEventListener('click', () => fn(r));
+            actions.appendChild(b);
+        }
+
+        $('rows').appendChild(tr);
+        return r;
+    });
+
+    $('table').hidden = false;
+    $('gen').disabled = $('save').disabled = false;
+    summary();
+}
+
+async function generateRow(r)
+{
+    setStatus(r, 'gerando…');
+
+    try
+    {
+        const { synopsis } = await api('POST', '/api/synopsis/generate', r.item);
+        r.ta.value = synopsis;
+        r.saved = false;
+        setStatus(r, 'gerada');
+    }
+    catch (error) { setStatus(r, error.message, 'err'); }
+}
+
+async function saveRow(r)
+{
+    const synopsis = r.ta.value.trim();
+    if (!synopsis) return setStatus(r, 'sem sinopse', 'err');
+
+    setStatus(r, 'gravando…');
+
+    try
+    {
+        await api('PUT', `/api/synopsis/${r.item.id}`, { synopsis });
+        r.saved = true;
+        setStatus(r, 'gravada', 'ok');
+    }
+    catch (error) { setStatus(r, error.message, 'err'); }
+}
+
+// Um de cada vez: o llama-server local processa uma requisição por vez.
+async function runAll(list, fn)
+{
+    stopRequested = false;
+    $('stop').disabled = false;
+    $('gen').disabled = $('save').disabled = $('load').disabled = true;
+
+    for (const r of list)
+    {
+        if (stopRequested) break;
+        await fn(r);
+    }
+
+    $('stop').disabled = true;
+    $('gen').disabled = $('save').disabled = $('load').disabled = false;
+}
+
+$('load').addEventListener('click', load);
+$('stop').addEventListener('click', () => { stopRequested = true; });
+$('gen').addEventListener('click', () => runAll(rows.filter(r => !r.ta.value.trim() && !r.saved), generateRow));
+$('save').addEventListener('click', () => runAll(rows.filter(r => r.ta.value.trim() && !r.saved), saveRow));
+</script>
+</body>
+</html>

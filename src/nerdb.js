@@ -48,3 +48,6 @@ export async function* allRows({ from = 0, to = Infinity, max = Infinity } = {})
 
 export const patchCharacter = (id, movie_character) =>
     nerdb(`/api/admin/movie-cast/${id}`, { method: 'PATCH', body: JSON.stringify({ movie_character }) });
+
+export const putSynopsis = (id, synopsis) =>
+    nerdb(`/api/admin/movie/${id}/synopsis`, { method: 'PUT', body: JSON.stringify({ synopsis, generated: true }) });

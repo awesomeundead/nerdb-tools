@@ -40,3 +40,24 @@ export const SCHEMA_CONTEXT = {
     },
     required: ['items'],
 };
+
+export const SYSTEM_SYNOPSIS = `Você escreve sinopses curtas de filmes em português do Brasil, a partir do título e do ano.
+Regras:
+- Escreva 1 ou 2 frases, com no máximo 250 caracteres, em tom envolvente e sem spoilers.
+- Não invente enredo: se você não conhecer o filme com segurança, devolva "synopsis" vazio.
+- Responda só o JSON pedido, um item para cada entrada, mantendo o mesmo id.`;
+
+export const SCHEMA_SYNOPSIS = {
+    type: 'object',
+    properties: {
+        items: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: { id: { type: 'integer' }, synopsis: { type: 'string' } },
+                required: ['id', 'synopsis'],
+            },
+        },
+    },
+    required: ['items'],
+};

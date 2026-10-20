@@ -8,4 +8,5 @@ export const config = {
     minCount:    Number(process.env.MIN_COUNT || 3),
     concurrency: Number(process.env.CONCURRENCY || 1),
     dataDir:     process.env.DATA_DIR || 'data',
+    port:        Number(process.env.PORT || 3000),
 };

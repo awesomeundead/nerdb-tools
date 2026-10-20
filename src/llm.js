@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { SYSTEM_TEXTS, SCHEMA_TEXTS, SYSTEM_CONTEXT, SCHEMA_CONTEXT } from './prompts.js';
+import { SYSTEM_TEXTS, SCHEMA_TEXTS, SYSTEM_CONTEXT, SCHEMA_CONTEXT, SYSTEM_SYNOPSIS, SCHEMA_SYNOPSIS } from './prompts.js';
 
 let jsonMode = 'json_schema';   // cai para json_object se o llama-server recusar
 
@@ -32,6 +32,13 @@ async function chat(system, payload, schema)
 
     const content = (await res.json()).choices[0].message.content;
     return JSON.parse(content).items;
+}
+
+// movie: { id, title, year } -> string (vazia se a IA não souber)
+export async function generateSynopsis(movie)
+{
+    const items = await chat(SYSTEM_SYNOPSIS, [movie], SCHEMA_SYNOPSIS);
+    return (items?.[0]?.synopsis ?? '').trim();
 }
 
 // texts: string[] -> [{ id (índice em texts), pt, ambiguous }]
