@@ -5,6 +5,7 @@ import { split, isCandidate } from '../normalize.js';
 import { translateTail } from '../tail.js';
 import { translateTexts, translateContextual } from '../llm.js';
 import { readJson, writeJson, readState, updateState, FILES } from '../storage.js';
+import { progress } from '../util.js';
 
 const clean = (pt, original) =>
 {
@@ -34,9 +35,13 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
     const records = [];
     let lastId = start;
 
+    const scan = progress('Varrendo NERDB', Number.isFinite(rows) ? rows : null);
+    let read = 0;
+
     for await (const row of allRows({ from: start, to, max: rows }))
     {
         lastId = Math.max(lastId, row.id);
+        scan.update(++read, `id ${row.id}`);
 
         const { base, tail } = split(row.movie_character);
         if (!isCandidate(base)) continue;
@@ -55,6 +60,8 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
         });
     }
 
+    scan.done();
+
     cache.countedId = Math.max(cache.countedId, lastId);
     await writeJson(FILES.cache, cache);
 
@@ -69,10 +76,13 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
 
     console.log(`${Object.keys(cache.counts).length} textos únicos no total, ${pending.length} novos vão para a IA (mínimo ${config.minCount} ocorrências).`);
 
+    const bar = progress('IA · textos', pending.length);
+    
     for (let i = 0; i < pending.length; i += config.batch)
     {
         const batch = pending.slice(i, i + config.batch);
-
+        bar.update(i, `"${batch[0].text}"…`);   // mostra o que está sendo traduzido agora
+        
         try
         {
             let got = 0;
@@ -88,10 +98,13 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
 
             if (got < batch.length) console.warn(`Lote ${i / config.batch + 1}: ${batch.length - got} sem resposta (serão retentados).`);
         }
-        catch (error) { console.error(`Lote ${i / config.batch + 1} falhou: ${error.message}`); }
+        catch (error) { bar.log(`Lote ${i / config.batch + 1} falhou: ${error.message}`); }
 
         await writeJson(FILES.cache, cache);
+        bar.update(Math.min(i + config.batch, pending.length));
     }
+
+    bar.done();
 
     // 3. translations.json: merge. Entradas existentes mantêm pt e skip (inclusive edições manuais);
     //    só o contador é atualizado. O dicionário sempre vence. Ordenado por frequência.

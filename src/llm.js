@@ -12,8 +12,11 @@ async function chat(system, payload, schema)
     const res = await fetch(`${config.llamaUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(180_000),   // não fica preso para sempre
         body: JSON.stringify({
             temperature: 0,
+            max_tokens: 2048,                   // 20 itens cabem com folga; corta loops
+            chat_template_kwargs: { enable_thinking: false },   // desliga o raciocínio, se o template suportar
             messages: [
                 { role: 'system', content: system },
                 { role: 'user', content: JSON.stringify(payload) },
