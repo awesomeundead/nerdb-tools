@@ -76,12 +76,12 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
 
     console.log(`${Object.keys(cache.counts).length} textos únicos no total, ${pending.length} novos vão para a IA (mínimo ${config.minCount} ocorrências).`);
 
-    const bar = progress('IA · textos', pending.length);
+    const bar = pending.length ? progress('IA · textos', pending.length) : null;
     
     for (let i = 0; i < pending.length; i += config.batch)
     {
         const batch = pending.slice(i, i + config.batch);
-        bar.update(i, `"${batch[0].text}"…`);   // mostra o que está sendo traduzido agora
+        bar?.update(i, `"${batch[0].text}"…`);   // mostra o que está sendo traduzido agora
         
         try
         {
@@ -98,13 +98,13 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
 
             if (got < batch.length) console.warn(`Lote ${i / config.batch + 1}: ${batch.length - got} sem resposta (serão retentados).`);
         }
-        catch (error) { bar.log(`Lote ${i / config.batch + 1} falhou: ${error.message}`); }
+        catch (error) { bar?.log(`Lote ${i / config.batch + 1} falhou: ${error.message}`); }
 
         await writeJson(FILES.cache, cache);
-        bar.update(Math.min(i + config.batch, pending.length));
+        bar?.update(Math.min(i + config.batch, pending.length));
     }
 
-    bar.done();
+    bar?.done();
 
     // 3. translations.json: merge. Entradas existentes mantêm pt e skip (inclusive edições manuais);
     //    só o contador é atualizado. O dicionário sempre vence. Ordenado por frequência.
@@ -134,9 +134,12 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
 
     console.log(`${ambiguous.length} linhas ambíguas no intervalo, ${todo.length} a traduzir com contexto.`);
 
+    const ctxBar = todo.length ? progress('IA · contexto', todo.length) : null;
+
     for (let i = 0; i < todo.length; i += config.batch)
     {
         const batch = todo.slice(i, i + config.batch);
+        ctxBar.update(i, `${batch[0].title}…`);   // filme do primeiro item do lote
 
         try
         {
@@ -150,10 +153,13 @@ export async function collect({ rows = Infinity, from = null, to = Infinity, ful
                 if (rec) cache.rows[rec.id] = clean(r.pt, cache.counts[rec.key].text);
             }
         }
-        catch (error) { console.error(`Lote contextual ${i / config.batch + 1} falhou: ${error.message}`); }
+        catch (error) { ctxBar.log(`Lote contextual ${i / config.batch + 1} falhou: ${error.message}`); }
 
         await writeJson(FILES.cache, cache);
+        ctxBar.update(Math.min(i + config.batch, todo.length));
     }
+
+    ctxBar?.done();
 
     // contextual.json: merge por row_id. Linhas já existentes ficam intactas (pt editado, skip).
     const byRow = new Map(prevContextual.map(i => [i.row_id, i]));
