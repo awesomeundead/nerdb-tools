@@ -1,10 +1,14 @@
 import { GoogleGenAI } from '@google/genai';
 import { config } from './config.js';
+import { sleep } from './util.js'; // Aproveita o sleep que já existe no util.js
 import { SYSTEM_TEXTS, SCHEMA_TEXTS, SYSTEM_CONTEXT, SCHEMA_CONTEXT, SYSTEM_SYNOPSIS, SCHEMA_SYNOPSIS } from './prompts.js';
 
 let jsonMode = 'json_schema';
 
 const ai = config.geminiApiKey ? new GoogleGenAI({ apiKey: config.geminiApiKey }) : null;
+
+// Controle de timestamp para o rate limit do Gemini
+let lastGeminiCallTime = 0;
 
 async function chatLocal(system, payload, schema) {
     const response_format = jsonMode === 'json_schema'
@@ -41,6 +45,14 @@ async function chatLocal(system, payload, schema) {
 async function chatGemini(system, payload, schema, thinkingLevel) {
     if (!ai) throw new Error('GEMINI_API_KEY não definida no ambiente.');
 
+    // Gerencia o intervalo mínimo (rate limit) entre as chamadas ao Gemini
+    const now = Date.now();
+    const elapsed = now - lastGeminiCallTime;
+    if (elapsed < config.geminiDelayMs) {
+        await sleep(config.geminiDelayMs - elapsed);
+    }
+    lastGeminiCallTime = Date.now();
+
     const response = await ai.models.generateContent({
         model: config.geminiModel,
         contents: JSON.stringify(payload),
@@ -71,7 +83,6 @@ async function chat(system, payload, schema, thinkingLevel) {
 
 // movie: { id, title, year } -> string (vazia se a IA não souber)
 export async function generateSynopsis(movie) {
-    // Passa o nível de raciocínio específico para sinopses
     const items = await chat(SYSTEM_SYNOPSIS, [movie], SCHEMA_SYNOPSIS, config.geminiThinkingSynopsis);
     return (items?.[0]?.synopsis ?? '').trim();
 }
