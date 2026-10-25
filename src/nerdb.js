@@ -51,3 +51,13 @@ export const patchCharacter = (id, movie_character) =>
 
 export const putSynopsis = (id, synopsis) =>
     nerdb(`/api/admin/movie/${id}/synopsis`, { method: 'PUT', body: JSON.stringify({ synopsis, generated: true }) });
+
+// Busca exata por título. Aceita resposta { items: [...] } ou array direto.
+export async function searchMovies(title)
+{
+    const data = await nerdb(`/api/admin/movies/search?q=${encodeURIComponent(title)}&by=title_br&exact=1`);
+    return data.items ?? data;
+}
+
+export const postMoviePlatform = (movie_id, platform_id, external_id) =>
+    nerdb('/api/admin/movie-platforms', { method: 'POST', body: JSON.stringify({ movie_id, platform_id, external_id }) });

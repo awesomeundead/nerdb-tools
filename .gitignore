@@ -1,4 +1,5 @@
 /data
 /data-test
+/examples
 /node_modules
 .env

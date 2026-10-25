@@ -3,6 +3,7 @@ import 'dotenv/config';
 export const config = {
     apiKey:      process.env.NERDB_API_KEY,
     nerdbUrl:    process.env.NERDB_URL || 'https://nerdb.com.br',
+    platformId:  Number(process.env.PLATFORM_ID || 2),
     
     // Configurações de IA
     llmProvider:  process.env.LLM_PROVIDER || 'local', // 'local' ou 'gemini'

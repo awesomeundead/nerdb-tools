@@ -16,7 +16,7 @@ const from  = flagNum('from', null);        // começa depois deste id (padrão:
 const to    = flagNum('to', Infinity);      // para neste id
 const full  = flags.has('--full');          // ignora checkpoints e varre tudo
 
-if (!['collect', 'apply'].includes(command))
+if (!['collect', 'apply', 'platform', 'platform:apply'].includes(command))
 {
     console.log(`Uso:
   node src/cli.js collect [--full] [--from=ID] [--to=ID] [--rows=N]
@@ -33,6 +33,16 @@ if (command === 'collect')
 {
     const { collect } = await import('./commands/collect.js');
     await collect({ rows, from, to, full });
+}
+else if (command === 'platform')
+{
+    const { match } = await import('./commands/platform.js');
+    await match();
+}
+else if (command === 'platform:apply')
+{
+    const { applyPlatform } = await import('./commands/platform.js');
+    await applyPlatform({ dryRun: flags.has('--dry-run') });
 }
 else
 {

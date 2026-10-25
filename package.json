@@ -6,9 +6,12 @@
   "author": "",
   "type": "module",
   "scripts": {
-    "collect": "node src/cli.js collect",
     "apply": "node src/cli.js apply",
     "apply:dry": "node src/cli.js apply --dry-run",
+    "collect": "node src/cli.js collect",
+    "platform": "node src/cli.js platform",
+    "platform:dry": "node src/cli.js platform:apply --dry-run",
+    "platform:apply": "node src/cli.js platform:apply",
     "serve": "node src/server.js"
   },
   "dependencies": {
